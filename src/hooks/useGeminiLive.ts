@@ -11,11 +11,14 @@ export interface TranscriptMessage {
 }
 
 export type OrbState = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'reconnecting' | 'paused';
+export const GEMINI_LIVE_VOICES = ['Aoede', 'Charon', 'Fenrir', 'Kore', 'Puck'] as const;
+export type GeminiLiveVoice = (typeof GEMINI_LIVE_VOICES)[number];
 
 interface UseGeminiLiveProps {
   jobDetails?: string;
   candidateInfo?: string;
   projectContext?: string;
+  voiceName: GeminiLiveVoice;
 }
 
 // Utility to convert ArrayBuffer to Base64
@@ -29,7 +32,46 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return window.btoa(binary);
 }
 
-export function useGeminiLive({ jobDetails, candidateInfo, projectContext }: UseGeminiLiveProps) {
+function searchInterviewContext(
+  query: string,
+  requestedSource: string,
+  jobDetails?: string,
+  candidateInfo?: string,
+  projectContext?: string
+): string {
+  const sources = [
+    { key: 'job', label: 'Job description', text: jobDetails?.trim() || '' },
+    { key: 'background', label: 'Candidate background', text: candidateInfo?.trim() || '' },
+    { key: 'projects', label: 'Project context', text: projectContext?.trim() || '' },
+  ].filter(source => source.text && (requestedSource === 'all' || requestedSource === source.key));
+
+  const terms = [...new Set((query.toLowerCase().match(/[a-z0-9+#.-]{2,}/g) || [])
+    .filter(term => !['about', 'after', 'before', 'from', 'have', 'into', 'that', 'them', 'then', 'there', 'these', 'they', 'this', 'what', 'when', 'where', 'which', 'with'].includes(term)))];
+  const candidates = sources.flatMap(source => {
+    const chunks: { label: string; text: string; score: number }[] = [];
+    const chunkSize = 1200;
+    const overlap = 180;
+    for (let start = 0; start < source.text.length; start += chunkSize - overlap) {
+      const text = source.text.slice(start, start + chunkSize).trim();
+      if (!text) continue;
+      const normalized = text.toLowerCase();
+      const score = terms.reduce((total, term) => total + (normalized.includes(term) ? 1 : 0), 0)
+        + (query.trim().length > 2 && normalized.includes(query.trim().toLowerCase()) ? 4 : 0);
+      chunks.push({ label: source.label, text, score });
+    }
+    return chunks;
+  });
+
+  const matches = candidates
+    .filter(candidate => terms.length === 0 || candidate.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 5);
+
+  if (!matches.length) return 'No matching passage was found in the requested context. Try a broader search query.';
+  return matches.map(match => `[${match.label}]\n${match.text}`).join('\n\n---\n\n');
+}
+
+export function useGeminiLive({ jobDetails, candidateInfo, projectContext, voiceName }: UseGeminiLiveProps) {
   const [orbState, setOrbState] = useState<OrbState>('idle');
   const [audioLevel, setAudioLevel] = useState<number>(0);
   const [currentPhase, setCurrentPhase] = useState<string>('warmup');
@@ -211,6 +253,23 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext }: Use
               }]
             });
           }
+        } else if (call.name === 'retrieveInterviewContext') {
+          const result = searchInterviewContext(
+            call.args?.query || '',
+            call.args?.source || 'all',
+            jobDetails,
+            candidateInfo,
+            projectContext
+          );
+          if (sessionRef.current && call.id) {
+            sessionRef.current.sendToolResponse({
+              functionResponses: [{
+                id: call.id,
+                name: 'retrieveInterviewContext',
+                response: { result }
+              }]
+            });
+          }
         }
       }
     }
@@ -341,7 +400,7 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext }: Use
         isModelTurnCompleteRef.current = false;
       }
     }
-  }, [playPCMChunk, stopAudioPlayback]);
+  }, [jobDetails, candidateInfo, projectContext, playPCMChunk, stopAudioPlayback]);
 
   // Initializes user microphone capture and downsamples PCM to 16kHz
   const startMicPipeline = useCallback(async (session: any) => {
@@ -507,6 +566,23 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext }: Use
                   },
                   required: ['phase']
                 }
+              }, {
+                name: 'retrieveInterviewContext',
+                description: 'Search the uploaded job description, candidate background, and project materials for details to recall during the interview. Use this instead of asking the candidate to repeat supplied information.',
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    query: {
+                      type: Type.STRING,
+                      description: 'A focused search for a fact, skill, employer, project, responsibility, result, or technology.'
+                    },
+                    source: {
+                      type: Type.STRING,
+                      description: 'Optional context source to search: all, job, background, or projects.'
+                    }
+                  },
+                  required: ['query']
+                }
               }]
             }
           ],
@@ -514,7 +590,7 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext }: Use
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
-                voiceName: 'Aoede'
+                voiceName
               }
             }
           }
@@ -617,7 +693,7 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext }: Use
         }
       }
     }
-  }, [jobDetails, candidateInfo, projectContext, startMicPipeline, handleServerMessage, cleanup]);
+  }, [jobDetails, candidateInfo, projectContext, voiceName, startMicPipeline, handleServerMessage, cleanup]);
 
   // Clean up connections on unmount
   useEffect(() => {

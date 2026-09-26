@@ -4,7 +4,7 @@ import { Play, Pause, SkipForward, X, ChevronUp, History, Calendar, Clock, Alert
 import localforage from 'localforage';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useGeminiLive, OrbState } from '../hooks/useGeminiLive';
+import { useGeminiLive, OrbState, GEMINI_LIVE_VOICES, GeminiLiveVoice } from '../hooks/useGeminiLive';
 import { TourGuide, triggerTourRestart } from './TourGuide';
 
 interface CoachModeProps {
@@ -27,6 +27,15 @@ export const CoachMode = forwardRef<{
   endSession: () => Promise<void>;
   openPastSessions: () => void;
 }, CoachModeProps>(({ jobDetails, candidateInfo, projectContext, onBack, onSessionActiveChange }, ref) => {
+  const [voiceName, setVoiceName] = useState<GeminiLiveVoice>(() => {
+    try {
+      const savedVoice = window.localStorage.getItem('speax-coach-voice');
+      return GEMINI_LIVE_VOICES.find(voice => voice === savedVoice) || 'Aoede';
+    } catch {
+      return 'Aoede';
+    }
+  });
+
   const {
     orbState,
     audioLevel,
@@ -43,8 +52,18 @@ export const CoachMode = forwardRef<{
   } = useGeminiLive({
     jobDetails,
     candidateInfo,
-    projectContext
+    projectContext,
+    voiceName
   });
+
+  const changeVoice = (nextVoice: GeminiLiveVoice) => {
+    setVoiceName(nextVoice);
+    try {
+      window.localStorage.setItem('speax-coach-voice', nextVoice);
+    } catch (err) {
+      console.error('[CoachMode] Failed to save selected voice:', err);
+    }
+  };
 
   const [seconds, setSeconds] = useState(0);
   const [isTranscriptExpanded, setIsTranscriptExpanded] = useState(false);
@@ -475,6 +494,20 @@ export const CoachMode = forwardRef<{
           <h2 className="text-xs font-semibold text-gray-400">
             {getStatusText()}
           </h2>
+            <label className="mt-4 inline-flex items-center gap-2 text-xs text-gray-400">
+              <Volume2 size={14} aria-hidden="true" />
+              <span>Coach voice</span>
+              <select
+                aria-label="Coach voice"
+                title={isSessionActive ? 'Voice selection applies to the next session' : 'Choose the coach voice'}
+                value={voiceName}
+                disabled={isSessionActive}
+                onChange={event => changeVoice(event.target.value as GeminiLiveVoice)}
+                className="rounded-lg border border-white/10 bg-[#111318] px-2 py-1.5 text-gray-200 outline-none focus:border-blue-400/50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {GEMINI_LIVE_VOICES.map(voice => <option key={voice} value={voice}>{voice}</option>)}
+              </select>
+            </label>
           {error && (
             <div className="mt-3 flex items-center justify-center gap-2 p-2.5 rounded-lg bg-red-950/20 border border-red-500/20 text-red-400 text-[10px] leading-relaxed max-w-xs mx-auto">
               <AlertTriangle size={12} className="shrink-0" />
