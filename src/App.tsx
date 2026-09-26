@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import localforage from 'localforage';
-import { FileText, BriefcaseBusiness, Code2, Upload, Trash2, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { FileText, BriefcaseBusiness, Code2, Upload, Trash2, ArrowRight, Loader2, Sparkles, HelpCircle } from 'lucide-react';
 import { CoachMode } from './components/CoachMode';
+import { TourGuide, triggerTourRestart } from './components/TourGuide';
 import { extractTextFromPDF } from './lib/pdfUtil';
 import { extractProjectFromZip, ProjectMeta } from './lib/zipUtil';
 
@@ -61,14 +62,14 @@ export default function App() {
 
   if(coachOpen) return <CoachMode jobDetails={context.jobDetails} candidateInfo={context.candidateInfo} projectContext={projectContext} onSessionActiveChange={()=>{}} />;
 
-  return <main className="min-h-screen bg-[#08090d] text-white px-4 py-8 md:px-8">
-    <div className="mx-auto max-w-5xl">
-      <header className="mb-8 flex items-center justify-between"><div><div className="flex items-center gap-2 text-xl font-semibold"><Sparkles size={20}/> SPEAX Coach</div><p className="mt-1 text-sm text-gray-500">Personalized mock-interview coaching</p></div><button onClick={()=>setCoachOpen(true)} disabled={!readiness.job && !readiness.resume} className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-30">Open Coach <ArrowRight size={15} className="ml-1 inline"/></button></header>
+  return <main className="h-screen overflow-y-auto bg-[#08090d] text-white px-4 py-6 md:px-8 md:py-8">
+    <div className="mx-auto max-w-6xl">
+      <header id="main-header" className="mb-6 flex flex-wrap items-center justify-between gap-4"><div><div className="flex items-center gap-2 text-xl font-semibold"><Sparkles size={20}/> SPEAX Coach</div><p className="mt-1 text-sm text-gray-500">Personalized mock-interview coaching</p></div><div className="flex items-center gap-2"><button id="main-tutorial" onClick={()=>triggerTourRestart('main')} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3 py-2 text-xs font-semibold text-gray-300 hover:bg-white/[.08] hover:text-white"><HelpCircle size={14}/> Tutorial</button><button id="main-start-coach" onClick={()=>setCoachOpen(true)} disabled={!readiness.job && !readiness.resume} className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-30">Open Coach <ArrowRight size={15} className="ml-1 inline"/></button></div></header>
       <section className="mb-6 rounded-2xl border border-white/10 bg-white/[.03] p-5"><h1 className="text-lg font-medium">Load your interview context</h1><p className="mt-1 text-sm text-gray-500">Nothing else from SPEAX is included. The coach uses these sources to personalize the live interview.</p></section>
       <div className="grid gap-4 md:grid-cols-3">
-        <ContextCard icon={<FileText/>} title="Your Background" subtitle="Resume / CV PDF" loaded={readiness.resume} busy={busy==='resume'} onUpload={()=>resumeRef.current?.click()} onClear={()=>clear('candidateInfo')} detail={readiness.resume?'Resume text extracted and ready.':'Upload a PDF'} />
-        <ContextCard icon={<BriefcaseBusiness/>} title="Target Role" subtitle="Job description PDF or text" loaded={readiness.job} busy={busy==='job'} onUpload={()=>jobRef.current?.click()} onClear={()=>clear('jobDetails')} detail={readiness.job?'Job requirements loaded.':'Upload a PDF or paste below'} />
-        <ContextCard icon={<Code2/>} title="Technical Background" subtitle="Project / code ZIP" loaded={readiness.project} busy={busy==='project'} onUpload={()=>projectRef.current?.click()} onClear={()=>clear('projects')} detail={context.projects.length ? `${context.projects.length} project${context.projects.length===1?'':'s'} loaded.` : 'Upload one or more ZIPs'} />
+        <div id="resume-card"><ContextCard icon={<FileText/>} title="Your Background" subtitle="Resume / CV PDF" loaded={readiness.resume} busy={busy==='resume'} onUpload={()=>resumeRef.current?.click()} onClear={()=>clear('candidateInfo')} detail={readiness.resume?'Resume text extracted and ready.':'Upload a PDF'} /></div>
+        <div id="job-card"><ContextCard icon={<BriefcaseBusiness/>} title="Target Role" subtitle="Job description PDF or text" loaded={readiness.job} busy={busy==='job'} onUpload={()=>jobRef.current?.click()} onClear={()=>clear('jobDetails')} detail={readiness.job?'Job requirements loaded.':'Upload a PDF or paste below'} /></div>
+        <div id="projects-card"><ContextCard icon={<Code2/>} title="Technical Background" subtitle="Project / code ZIP" loaded={readiness.project} busy={busy==='project'} onUpload={()=>projectRef.current?.click()} onClear={()=>clear('projects')} detail={context.projects.length ? `${context.projects.length} project${context.projects.length===1?'':'s'} loaded.` : 'Upload one or more ZIPs'} /></div>
       </div>
       <input ref={resumeRef} hidden type="file" accept="application/pdf" onChange={e=>loadPdf('resume',e.target.files?.[0])}/>
       <input ref={jobRef} hidden type="file" accept="application/pdf" onChange={e=>loadPdf('job',e.target.files?.[0])}/>
@@ -79,6 +80,7 @@ export default function App() {
         <textarea value={context.candidateInfo} onChange={e=>setContext(c=>({...c,candidateInfo:e.target.value}))} placeholder="Or paste your resume / professional background here…" className="min-h-44 rounded-2xl border border-white/10 bg-white/[.03] p-4 text-sm outline-none focus:border-white/25" />
       </div>
       <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-white/[.03] p-5"><div><div className="font-medium">Ready when you are</div><div className="mt-1 text-xs text-gray-500">{[readiness.resume&&'background',readiness.job&&'target role',readiness.project&&'technical projects'].filter(Boolean).join(' · ')||'Add context above for a personalized session.'}</div></div><button onClick={()=>setCoachOpen(true)} disabled={!readiness.job && !readiness.resume} className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black disabled:opacity-30">Start Coach</button></div>
+      <TourGuide view="main" />
     </div>
   </main>;
 }

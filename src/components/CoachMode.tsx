@@ -5,7 +5,7 @@ import localforage from 'localforage';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useGeminiLive, OrbState } from '../hooks/useGeminiLive';
-import { TourGuide } from './TourGuide';
+import { TourGuide, triggerTourRestart } from './TourGuide';
 
 interface CoachModeProps {
   jobDetails?: string;
@@ -240,13 +240,13 @@ export const CoachMode = forwardRef<{
   }));
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#070708] text-gray-200 overflow-hidden font-sans select-none relative">
+    <div className="h-screen w-full flex flex-col bg-[#070708] text-gray-200 overflow-hidden font-sans select-none relative">
       {/* Dynamic Ambient Background Glows */}
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-900/10 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-900/10 blur-[120px] pointer-events-none" />
 
       {/* ── Top Header Control Bar ── */}
-      <div className="flex-none flex items-center justify-between p-4 border-b border-white/5 bg-[#0A0A0C]/90 backdrop-blur-md z-20">
+      <div className="flex-none flex items-center justify-between gap-3 px-4 py-3 md:px-5 border-b border-white/5 bg-[#0A0A0C]/95 z-20">
         {/* Phase Tracker */}
         <div className="flex flex-col">
           <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-blue-500">Current Phase</span>
@@ -263,6 +263,7 @@ export const CoachMode = forwardRef<{
 
         {/* Session Action Controls */}
         <div className="flex items-center gap-1.5">
+          <button id="coach-tutorial" onClick={()=>triggerTourRestart('coach')} title="Open tutorial" className="p-2 rounded-lg bg-white/5 border border-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"><HelpCircle size={14}/></button>
           {isSessionActive && (
             <>
               {/* Play / Pause Toggle */}
@@ -319,9 +320,9 @@ export const CoachMode = forwardRef<{
       </div>
 
       {/* ── Main Workspace Body ── */}
-      <div className="flex-1 flex flex-col items-center justify-center relative px-4 pb-20 pt-4 z-10">
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-center relative px-4 pb-16 pt-3 z-10">
         {/* Animated Interactive Voice-Driven Orb */}
-        <div className="relative w-56 h-56 md:w-64 md:h-64 flex items-center justify-center">
+        <div className="relative w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 flex items-center justify-center">
           <AnimatePresence mode="popLayout">
             {/* Ripple rings triggered when speaking */}
             {orbState === 'speaking' && (
@@ -387,7 +388,7 @@ export const CoachMode = forwardRef<{
               boxShadow: `0 0 ${20 + audioLevel * 60}px ${getOrbColor()}`,
               transition: 'transform 80ms ease-out, box-shadow 80ms ease-out'
             }}
-            className={`relative z-20 w-40 h-40 md:w-48 md:h-48 rounded-full flex flex-col items-center justify-center border shadow-2xl cursor-pointer ${
+            className={`relative z-20 w-36 h-36 sm:w-40 sm:h-40 md:w-48 md:h-48 rounded-full flex flex-col items-center justify-center border shadow-2xl cursor-pointer ${
               orbState === 'idle'
                 ? 'bg-gradient-to-tr from-white/[0.02] to-white/[0.05] border-white/10 hover:border-white/20 shadow-black/60'
                 : orbState === 'connecting'
@@ -474,7 +475,7 @@ export const CoachMode = forwardRef<{
       </div>
 
       {/* ── Context Status Widget ── */}
-      <div id="context-status-widget" className="absolute bottom-14 left-4 right-4 z-20 bg-[#0F0F12]/80 border border-white/5 rounded-xl p-3 text-[10px] space-y-2 max-w-lg mx-auto backdrop-blur-sm pointer-events-none hidden sm:block">
+      <div id="context-status-widget" className="absolute bottom-[52px] left-4 right-4 z-20 bg-[#0F0F12]/90 border border-white/5 rounded-xl p-3 text-[10px] space-y-2 max-w-lg mx-auto backdrop-blur-sm pointer-events-none hidden sm:block">
         <div className="flex items-center justify-between text-gray-400 border-b border-white/5 pb-1">
           <span className="font-bold uppercase tracking-wider text-[8px]">Active Interview Context</span>
         </div>
@@ -563,7 +564,7 @@ export const CoachMode = forwardRef<{
       {/* ── Past Sessions Drawer Overlay ── */}
       <AnimatePresence>
         {showHistoryPanel && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-end">
+          <div className="fixed inset-0 z-[210] flex items-center justify-end">
             {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
