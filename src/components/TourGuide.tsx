@@ -217,11 +217,11 @@ export function TourGuide({ view }: TourGuideProps) {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.16 }}
-          className="fixed z-[202] w-[min(360px,calc(100vw-32px))] rounded-2xl border border-blue-400/20 bg-[#0b0d12] p-5 text-gray-200 shadow-[0_20px_60px_rgba(0,0,0,0.65)] pointer-events-auto"
+          className="fixed z-[202] w-[min(360px,calc(100vw-32px))] rounded-2xl border border-blue-300/45 bg-[#151b27] p-5 text-gray-200 shadow-[0_20px_60px_rgba(0,0,0,0.75),0_0_24px_rgba(59,130,246,0.16)] ring-1 ring-white/10 pointer-events-auto"
           style={{ top: tooltipPos.top, left: tooltipPos.left }}
         >
           <div className="mb-3 flex items-start justify-between gap-3">
-            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-blue-400">
+            <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.18em] text-blue-400">
               <Sparkles size={12} /> SPEAX Tutorial
             </span>
             <button onClick={complete} className="rounded-md p-1 text-gray-500 hover:bg-white/5 hover:text-white" aria-label="Close tutorial">
@@ -229,15 +229,15 @@ export function TourGuide({ view }: TourGuideProps) {
             </button>
           </div>
           <h4 className="text-sm font-semibold leading-tight text-white">{currentStep.title}</h4>
-          <p className="mt-2 text-[11px] leading-relaxed text-gray-400">{currentStep.description}</p>
+          <p className="mt-2 text-xs leading-relaxed text-gray-300">{currentStep.description}</p>
           <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-3">
             <div className="flex gap-1.5" aria-label={`Step ${currentIndex + 1} of ${steps.length}`}>
               {steps.map((_, i) => <span key={i} className={`h-1.5 rounded-full transition-all ${i === currentIndex ? 'w-5 bg-blue-500' : 'w-1.5 bg-white/15'}`} />)}
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={complete} className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-500 hover:text-white">Skip</button>
+              <button onClick={complete} className="px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-gray-500 hover:text-white">Skip</button>
               {currentIndex > 0 && <button onClick={back} className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-gray-300 hover:bg-white/10" aria-label="Previous step"><ChevronLeft size={14} /></button>}
-              <button onClick={next} className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-blue-500">
+              <button onClick={next} className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-blue-500">
                 {currentIndex === steps.length - 1 ? 'Finish' : 'Next'} <ChevronRight size={12} />
               </button>
             </div>

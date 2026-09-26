@@ -584,10 +584,13 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext }: Use
 
       // On fresh connect (not reconnect), send an initial prompt so the coach speaks first
       if (!isReconnect) {
+        const hasInterviewContext = Boolean(jobDetails?.trim() || candidateInfo?.trim() || projectContext?.trim());
         session.sendClientContent({
           turns: [{
             role: 'user',
-            parts: [{ text: 'Hi, I\'m ready to start the mock interview coaching session. Please introduce yourself and begin.' }]
+            parts: [{ text: hasInterviewContext
+              ? 'Hi, I\'m ready to start the mock interview coaching session. Please introduce yourself and begin.'
+              : 'Before we start the mock interview, please ask me what role I am preparing for and let me share or summarize the job description if I have it. Also ask me to briefly describe my background, experience, and relevant skills. This is setup context; begin interview questions after gathering it.' }]
           }],
           turnComplete: true
         });

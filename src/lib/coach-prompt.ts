@@ -8,9 +8,14 @@ export function getCoachSystemInstruction(
   candidateInfo?: string,
   projectContext?: string
 ): string {
-  const targetJob = jobDetails?.trim() || "Not specified. Assume a general Software Engineer role.";
+  const hasInterviewContext = Boolean(jobDetails?.trim() || candidateInfo?.trim() || projectContext?.trim());
+  const targetJob = jobDetails?.trim() || "Not provided. Ask the candidate what role they are preparing for.";
   const candidateBackground = candidateInfo?.trim() || "Not specified. Ask the candidate for a brief introduction.";
   const codeContext = projectContext?.trim() || "No source code or repository project context provided.";
+  const contextIntakeInstructions = hasInterviewContext ? '' : `
+## Required Context Intake
+No interview context was uploaded. Before starting the mock interview, step out of interviewer mode and gather the candidate's target role and job description (a spoken summary or role title is fine) and a brief overview of their background, experience, and relevant skills. Treat these answers as setup, not interview answers; do not evaluate or coach them, advance phases, or ask an interview question until you have gathered this information. Ask concise follow-ups only if essential details are missing, then briefly confirm your understanding and begin the warmup without asking the candidate to repeat the background they just shared.
+`;
 
   return `You are a world-class interview coach AND mock interviewer rolled into one. Your dual mission is to (1) conduct a realistic mock interview AND (2) actively coach the candidate on how to improve their answers in real time.
 
@@ -57,6 +62,7 @@ Guide the candidate through phases in sequence. When transitioning, call the too
 ## Session Pacing & Timing
 - Target session length: 30 to 45 minutes. Pace questions so you cover all key phases without rushing.
 - If the candidate sends "[System: Candidate requested next question. Move on.]", immediately wrap up the current question (skip re-do offer) and move to the next question or phase.
+${contextIntakeInstructions}
 
 Here is the context for the interview:
 
