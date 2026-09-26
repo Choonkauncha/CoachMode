@@ -103,8 +103,6 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext, voice
   // (reset on turnComplete/interruption) so it can be checked against known
   // "asked for context we already have" patterns the instant the turn ends.
   const coachTurnBufferRef = useRef<string>('');
-  const hasNudgedJobRef = useRef<boolean>(false);
-  const hasNudgedResumeRef = useRef<boolean>(false);
 
   // Clean up all audio playbacks
   const stopAudioPlayback = useCallback(() => {
@@ -425,11 +423,9 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext, voice
         if (completedCoachText) {
           const readiness = getContextReadiness(jobDetails, candidateInfo, projectContext);
           const redundantAsk = detectsRedundantContextRequest(completedCoachText, readiness);
-          if (redundantAsk === 'job' && !hasNudgedJobRef.current) {
-            hasNudgedJobRef.current = true;
+          if (redundantAsk === 'job') {
             sendContextCorrection('job');
-          } else if (redundantAsk === 'resume' && !hasNudgedResumeRef.current) {
-            hasNudgedResumeRef.current = true;
+          } else if (redundantAsk === 'resume') {
             sendContextCorrection('resume');
           }
         }
@@ -571,8 +567,6 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext, voice
       isIntentionallyDisconnectedRef.current = false;
       isPausedRef.current = false;
       coachTurnBufferRef.current = '';
-      hasNudgedJobRef.current = false;
-      hasNudgedResumeRef.current = false;
     }
 
     try {
