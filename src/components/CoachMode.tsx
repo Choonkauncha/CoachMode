@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, Pause, SkipForward, X, ChevronUp, History, Calendar, Clock, AlertTriangle, Sparkles, Mic, Loader2, Volume2, HelpCircle, ArrowLeft } from 'lucide-react';
+import { Play, Pause, SkipForward, X, ChevronUp, History, Calendar, Clock, AlertTriangle, Sparkles, Mic, Loader2, Volume2, HelpCircle, ArrowLeft, Lightbulb } from 'lucide-react';
 import localforage from 'localforage';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -21,6 +21,31 @@ interface PastSession {
   durationMs: number;
   role: string;
   transcriptMarkdown: string;
+}
+
+function getSuggestedAnswerAnchors(candidateInfo?: string, projectContext?: string): string[] {
+  const suggestions: string[] = [];
+  const resumeLines = (candidateInfo || '')
+    .split(/\r?\n/)
+    .map(line => line.replace(/^[-*#\s]+/, '').trim())
+    .filter(line => line.length >= 28 && !/^https?:\/\//i.test(line));
+
+  resumeLines.slice(0, 2).forEach(line => {
+    suggestions.push(`Connect your answer to this background detail: “${line.slice(0, 150)}${line.length > 150 ? '…' : ''}”`);
+  });
+
+  const projectNames = [...(projectContext || '').matchAll(/===== PROJECT \d+: ([^=\n]+?) =====/g)]
+    .map(match => match[1].trim())
+    .filter(Boolean);
+  projectNames.slice(0, 2).forEach(name => {
+    suggestions.push(`Use ${name} as evidence: explain the problem, your technical choice, and the result.`);
+  });
+
+  if (!suggestions.length && projectContext?.trim()) {
+    suggestions.push('Ground your answer in a specific uploaded project, then explain your decision and the outcome.');
+  }
+
+  return suggestions.slice(0, 3);
 }
 
 export const CoachMode = forwardRef<{
@@ -67,6 +92,7 @@ export const CoachMode = forwardRef<{
 
   const [seconds, setSeconds] = useState(0);
   const [isTranscriptExpanded, setIsTranscriptExpanded] = useState(false);
+  const [suggestedAnswersEnabled, setSuggestedAnswersEnabled] = useState(false);
   
   // History panel states
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
@@ -74,6 +100,7 @@ export const CoachMode = forwardRef<{
   const [activeHistorySession, setActiveHistorySession] = useState<PastSession | null>(null);
 
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const suggestedAnswerAnchors = getSuggestedAnswerAnchors(candidateInfo, projectContext);
 
   // Notify parent of session activity state
   const isSessionActive = orbState !== 'idle';
@@ -351,7 +378,8 @@ export const CoachMode = forwardRef<{
       {/* ── Main Workspace Body ── */}
       <div className="flex-1 min-h-0 flex flex-col items-center justify-center relative px-4 pb-16 pt-3 z-10">
         {/* Animated Interactive Voice-Driven Orb */}
-        <div className="relative w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 flex items-center justify-center">
+        <div className="flex w-full max-w-5xl flex-col items-center justify-center gap-5 md:flex-row md:gap-12">
+        <div className="relative w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 flex items-center justify-center shrink-0">
           <AnimatePresence mode="popLayout">
             {/* Ripple rings triggered when speaking */}
             {orbState === 'speaking' && (
@@ -487,6 +515,47 @@ export const CoachMode = forwardRef<{
               </>
             )}
           </motion.button>
+        </div>
+
+        {/* Optional answer support stays beside the orb so it is visible without covering the live status. */}
+        <aside className="w-full max-w-xs rounded-xl border border-white/10 bg-[#0F0F12]/85 p-3 text-left shadow-xl backdrop-blur-sm md:w-64">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Lightbulb size={15} className={suggestedAnswersEnabled ? 'text-amber-300' : 'text-gray-500'} />
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-300">Suggested answers</div>
+                <div className="mt-0.5 text-[9px] text-gray-500">Resume + project anchors</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={suggestedAnswersEnabled}
+              aria-label="Toggle suggested answers"
+              title={suggestedAnswersEnabled ? 'Hide suggested answers' : 'Show suggested answers'}
+              onClick={() => setSuggestedAnswersEnabled(enabled => !enabled)}
+              className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors ${suggestedAnswersEnabled ? 'border-amber-300/50 bg-amber-400/80' : 'border-white/10 bg-white/10'}`}
+            >
+              <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${suggestedAnswersEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+            </button>
+          </div>
+          {suggestedAnswersEnabled && (
+            <div className="mt-3 border-t border-white/5 pt-3">
+              {suggestedAnswerAnchors.length ? (
+                <ul className="space-y-2">
+                  {suggestedAnswerAnchors.map(anchor => (
+                    <li key={anchor} className="flex gap-2 text-[10px] leading-relaxed text-gray-300">
+                      <Sparkles size={12} className="mt-0.5 shrink-0 text-amber-300" />
+                      <span>{anchor}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[10px] leading-relaxed text-gray-500">Upload your resume or a project ZIP to see answer anchors here.</p>
+              )}
+            </div>
+          )}
+        </aside>
         </div>
 
         {/* Dynamic Status Text */}
