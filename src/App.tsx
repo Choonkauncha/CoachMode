@@ -9,7 +9,7 @@ import { extractProjectFromZip, ProjectMeta } from './lib/zipUtil';
 type ProjectEntry = ProjectMeta & { context: string };
 type ContextState = { jobDetails: string; candidateInfo: string; projects: ProjectEntry[] };
 
-const KEYS = { job:'coach-job', candidate:'coach-candidate', projects:'coach-projects', project:'coach-project', meta:'coach-project-meta' };
+const KEYS = { job:'coach-job', candidate:'coach-candidate', projects:'coach-projects', project:'coach-project', meta:'coach-project-meta', screen:'coach-screen' };
 
 export default function App() {
   const [context, setContext] = useState<ContextState>({ jobDetails:'', candidateInfo:'', projects:[] });
@@ -19,15 +19,16 @@ export default function App() {
   const resumeRef = useRef<HTMLInputElement>(null), jobRef = useRef<HTMLInputElement>(null), projectRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { (async()=>{
-    const [job,candidate,projects,legacyProject,legacyMeta] = await Promise.all([
+    const [job,candidate,projects,legacyProject,legacyMeta,savedCoachOpen] = await Promise.all([
       localforage.getItem<string>(KEYS.job),
       localforage.getItem<string>(KEYS.candidate),
       localforage.getItem<ProjectEntry[]>(KEYS.projects),
       localforage.getItem<string>(KEYS.project),
-      localforage.getItem<ProjectMeta>(KEYS.meta)
+      localforage.getItem<ProjectMeta>(KEYS.meta),
+      localforage.getItem<boolean>(KEYS.screen)
     ]);
     const restored = projects?.length ? projects : (legacyProject && legacyMeta ? [{...legacyMeta, context: legacyProject}] : []);
-    setContext({jobDetails:job||'',candidateInfo:candidate||'',projects:restored}); setLoaded(true);
+    setContext({jobDetails:job||'',candidateInfo:candidate||'',projects:restored}); setCoachOpen(savedCoachOpen ?? false); setLoaded(true);
   })(); },[]);
 
   useEffect(() => { if(loaded) Promise.all([localforage.setItem(KEYS.job,context.jobDetails),localforage.setItem(KEYS.candidate,context.candidateInfo),localforage.setItem(KEYS.projects,context.projects)]); },[context,loaded]);
@@ -59,12 +60,15 @@ export default function App() {
   const removeProject = (id:string) => setContext(c=>({...c,projects:c.projects.filter(p=>p.id!==id)}));
   const projectContext = useMemo(() => context.projects.map((p,i)=>`\n\n===== PROJECT ${i+1}: ${p.fileName} =====\n${p.context}`).join('\n'),[context.projects]);
   const readiness = useMemo(()=>({resume:!!context.candidateInfo.trim(),job:!!context.jobDetails.trim(),project:context.projects.length>0}),[context]);
+  const openCoach = () => { setCoachOpen(true); localforage.setItem(KEYS.screen,true).catch(error=>console.error('Failed to save current screen:',error)); };
+  const returnToSetup = () => { setCoachOpen(false); localforage.setItem(KEYS.screen,false).catch(error=>console.error('Failed to save current screen:',error)); };
 
-  if(coachOpen) return <CoachMode jobDetails={context.jobDetails} candidateInfo={context.candidateInfo} projectContext={projectContext} onSessionActiveChange={()=>{}} />;
+  if(!loaded) return <main className="flex h-screen items-center justify-center bg-[#08090d] text-sm text-gray-400">Restoring your workspace…</main>;
+  if(coachOpen) return <CoachMode jobDetails={context.jobDetails} candidateInfo={context.candidateInfo} projectContext={projectContext} onBack={returnToSetup} onSessionActiveChange={()=>{}} />;
 
   return <main className="h-screen overflow-y-auto bg-[#08090d] text-white px-4 py-6 md:px-8 md:py-8">
     <div className="mx-auto max-w-6xl">
-      <header id="main-header" className="mb-6 flex flex-wrap items-center justify-between gap-4"><div><div className="flex items-center gap-2 text-xl font-semibold"><Sparkles size={20}/> SPEAX Coach</div><p className="mt-1 text-sm text-gray-500">Personalized mock-interview coaching</p></div><div className="flex items-center gap-2"><button id="main-tutorial" onClick={()=>triggerTourRestart('main')} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3 py-2 text-xs font-semibold text-gray-300 hover:bg-white/[.08] hover:text-white"><HelpCircle size={14}/> Tutorial</button><button id="main-start-coach" onClick={()=>setCoachOpen(true)} disabled={!loaded} className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-30">Open Coach <ArrowRight size={15} className="ml-1 inline"/></button></div></header>
+      <header id="main-header" className="mb-6 flex flex-wrap items-center justify-between gap-4"><div><div className="flex items-center gap-2 text-xl font-semibold"><Sparkles size={20}/> SPEAX Coach</div><p className="mt-1 text-sm text-gray-500">Personalized mock-interview coaching</p></div><div className="flex items-center gap-2"><button id="main-tutorial" onClick={()=>triggerTourRestart('main')} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3 py-2 text-xs font-semibold text-gray-300 hover:bg-white/[.08] hover:text-white"><HelpCircle size={14}/> Tutorial</button><button id="main-start-coach" onClick={openCoach} className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black">Open Coach <ArrowRight size={15} className="ml-1 inline"/></button></div></header>
       <section className="mb-6 rounded-2xl border border-white/10 bg-white/[.03] p-5"><h1 className="text-lg font-medium">Load your interview context</h1><p className="mt-1 text-sm text-gray-500">Nothing else from SPEAX is included. The coach uses these sources to personalize the live interview.</p></section>
       <div className="grid gap-4 md:grid-cols-3">
         <div id="resume-card"><ContextCard icon={<FileText/>} title="Your Background" subtitle="Resume / CV PDF" loaded={readiness.resume} busy={busy==='resume'} onUpload={()=>resumeRef.current?.click()} onClear={()=>clear('candidateInfo')} detail={readiness.resume?'Resume text extracted and ready.':'Upload a PDF'} /></div>
@@ -79,7 +83,7 @@ export default function App() {
         <textarea value={context.jobDetails} onChange={e=>setContext(c=>({...c,jobDetails:e.target.value}))} placeholder="Or paste the job description here…" className="min-h-44 rounded-2xl border border-white/10 bg-white/[.03] p-4 text-sm outline-none focus:border-white/25" />
         <textarea value={context.candidateInfo} onChange={e=>setContext(c=>({...c,candidateInfo:e.target.value}))} placeholder="Or paste your resume / professional background here…" className="min-h-44 rounded-2xl border border-white/10 bg-white/[.03] p-4 text-sm outline-none focus:border-white/25" />
       </div>
-      <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-white/[.03] p-5"><div><div className="font-medium">Ready when you are</div><div className="mt-1 text-xs text-gray-500">{[readiness.resume&&'background',readiness.job&&'target role',readiness.project&&'technical projects'].filter(Boolean).join(' · ')||(loaded?'No context uploaded. The coach will ask about your target role and background.':'Restoring saved context…')}</div></div><button onClick={()=>setCoachOpen(true)} disabled={!loaded} className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black disabled:opacity-30">Start Coach</button></div>
+      <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-white/[.03] p-5"><div><div className="font-medium">Ready when you are</div><div className="mt-1 text-xs text-gray-500">{[readiness.resume&&'background',readiness.job&&'target role',readiness.project&&'technical projects'].filter(Boolean).join(' · ')||(loaded?'No context uploaded. The coach will ask about your target role and background.':'Restoring saved context…')}</div></div><button onClick={openCoach} className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black">Start Coach</button></div>
       <TourGuide view="main" />
     </div>
   </main>;

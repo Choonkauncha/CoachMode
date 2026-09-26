@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, Pause, SkipForward, X, ChevronUp, History, Calendar, Clock, AlertTriangle, Sparkles, Mic, Loader2, Volume2, HelpCircle } from 'lucide-react';
+import { Play, Pause, SkipForward, X, ChevronUp, History, Calendar, Clock, AlertTriangle, Sparkles, Mic, Loader2, Volume2, HelpCircle, ArrowLeft } from 'lucide-react';
 import localforage from 'localforage';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,6 +11,7 @@ interface CoachModeProps {
   jobDetails?: string;
   candidateInfo?: string;
   projectContext?: string;
+  onBack: () => void;
   onSessionActiveChange?: (active: boolean) => void;
 }
 
@@ -25,7 +26,7 @@ interface PastSession {
 export const CoachMode = forwardRef<{
   endSession: () => Promise<void>;
   openPastSessions: () => void;
-}, CoachModeProps>(({ jobDetails, candidateInfo, projectContext, onSessionActiveChange }, ref) => {
+}, CoachModeProps>(({ jobDetails, candidateInfo, projectContext, onBack, onSessionActiveChange }, ref) => {
   const {
     orbState,
     audioLevel,
@@ -229,6 +230,14 @@ export const CoachMode = forwardRef<{
     setSeconds(0);
   };
 
+  const handleBack = async () => {
+    if (isSessionActive || transcript.length > 0) {
+      if (!confirm('Return to setup? Your transcript will be finalized and saved.')) return;
+      await handleEndSession();
+    }
+    onBack();
+  };
+
   // Expose methods to App parent via ref
   useImperativeHandle(ref, () => ({
     endSession: async () => {
@@ -263,6 +272,7 @@ export const CoachMode = forwardRef<{
 
         {/* Session Action Controls */}
         <div className="flex items-center gap-1.5">
+          <button onClick={handleBack} title="Back to setup" className="inline-flex items-center gap-1.5 rounded-lg border border-white/5 bg-white/5 px-2 py-2 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-all cursor-pointer"><ArrowLeft size={14}/><span>Back</span></button>
           <button id="coach-tutorial" onClick={()=>triggerTourRestart('coach')} title="Open tutorial" className="p-2 rounded-lg bg-white/5 border border-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"><HelpCircle size={14}/></button>
           {isSessionActive && (
             <>
