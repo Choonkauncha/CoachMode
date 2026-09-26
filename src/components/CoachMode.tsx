@@ -93,14 +93,85 @@ export const CoachMode = forwardRef<{
   const [seconds, setSeconds] = useState(0);
   const [isTranscriptExpanded, setIsTranscriptExpanded] = useState(false);
   const [suggestedAnswersEnabled, setSuggestedAnswersEnabled] = useState(false);
-  
+  const [suggestedAnswer, setSuggestedAnswer] = useState('');
+  const [isGeneratingSuggestedAnswer, setIsGeneratingSuggestedAnswer] = useState(false);
+  const [suggestedAnswerError, setSuggestedAnswerError] = useState('');
+
   // History panel states
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [pastSessions, setPastSessions] = useState<PastSession[]>([]);
   const [activeHistorySession, setActiveHistorySession] = useState<PastSession | null>(null);
 
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const lastSuggestedQuestionRef = useRef<string>('');
   const suggestedAnswerAnchors = getSuggestedAnswerAnchors(candidateInfo, projectContext);
+
+  useEffect(() => {
+    if (!suggestedAnswersEnabled) {
+      setSuggestedAnswer('');
+      setSuggestedAnswerError('');
+      lastSuggestedQuestionRef.current = '';
+      return;
+    }
+
+    const latestCoachQuestion = [...transcript]
+      .reverse()
+      .find(message => message.sender === 'coach' && !message.isStreaming && message.text.trim())?.text?.trim();
+
+    if (!latestCoachQuestion) {
+      return;
+    }
+
+    const normalizedQuestion = latestCoachQuestion.toLowerCase();
+    if (normalizedQuestion === lastSuggestedQuestionRef.current) {
+      return;
+    }
+
+    lastSuggestedQuestionRef.current = normalizedQuestion;
+    let cancelled = false;
+
+    const generateSuggestedAnswer = async () => {
+      setIsGeneratingSuggestedAnswer(true);
+      setSuggestedAnswerError('');
+
+      try {
+        const response = await fetch('/api/suggest-answer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: latestCoachQuestion,
+            jobDetails,
+            candidateInfo,
+            projectContext
+          })
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.error || 'Unable to generate a suggested answer.');
+        }
+
+        if (!cancelled) {
+          setSuggestedAnswer(payload.answer || '');
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setSuggestedAnswer('');
+          setSuggestedAnswerError(error?.message || 'Could not generate a suggested answer right now.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsGeneratingSuggestedAnswer(false);
+        }
+      }
+    };
+
+    generateSuggestedAnswer();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [suggestedAnswersEnabled, transcript, jobDetails, candidateInfo, projectContext]);
 
   // Notify parent of session activity state
   const isSessionActive = orbState !== 'idle';
@@ -378,8 +449,8 @@ export const CoachMode = forwardRef<{
       {/* ── Main Workspace Body ── */}
       <div className="flex-1 min-h-0 flex flex-col items-center justify-center relative px-4 pb-16 pt-3 z-10">
         {/* Animated Interactive Voice-Driven Orb */}
-        <div className="flex w-full max-w-5xl flex-col items-center justify-center gap-5 md:flex-row md:gap-12">
-        <div className="relative w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 flex items-center justify-center shrink-0">
+        <div className="flex w-full max-w-6xl flex-col items-center justify-center gap-5 md:flex-row md:items-start md:justify-center md:gap-8">
+        <div className="relative w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 flex items-center justify-center shrink-0 md:mr-2">
           <AnimatePresence mode="popLayout">
             {/* Ripple rings triggered when speaking */}
             {orbState === 'speaking' && (
@@ -517,14 +588,14 @@ export const CoachMode = forwardRef<{
           </motion.button>
         </div>
 
-        {/* Optional answer support stays beside the orb so it is visible without covering the live status. */}
-        <aside className="w-full max-w-xs rounded-xl border border-white/10 bg-[#0F0F12]/85 p-3 text-left shadow-xl backdrop-blur-sm md:w-64">
+        {/* Suggested-answer panel sits to the side of the orb rather than centered beneath it. */}
+        <aside className="w-full max-w-xs rounded-xl border border-white/10 bg-[#0F0F12]/85 p-3 text-left shadow-xl backdrop-blur-sm md:w-72 md:mt-5 md:ml-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Lightbulb size={15} className={suggestedAnswersEnabled ? 'text-amber-300' : 'text-gray-500'} />
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-300">Suggested answers</div>
-                <div className="mt-0.5 text-[9px] text-gray-500">Resume + project anchors</div>
+                <div className="mt-0.5 text-[9px] text-gray-500">Based on the live question + your context</div>
               </div>
             </div>
             <button
@@ -540,18 +611,42 @@ export const CoachMode = forwardRef<{
             </button>
           </div>
           {suggestedAnswersEnabled && (
-            <div className="mt-3 border-t border-white/5 pt-3">
-              {suggestedAnswerAnchors.length ? (
-                <ul className="space-y-2">
-                  {suggestedAnswerAnchors.map(anchor => (
-                    <li key={anchor} className="flex gap-2 text-[10px] leading-relaxed text-gray-300">
-                      <Sparkles size={12} className="mt-0.5 shrink-0 text-amber-300" />
-                      <span>{anchor}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-[10px] leading-relaxed text-gray-500">Upload your resume or a project ZIP to see answer anchors here.</p>
+            <div className="mt-3 border-t border-white/5 pt-3 space-y-3">
+              {isGeneratingSuggestedAnswer && (
+                <div className="flex items-center gap-2 text-[10px] text-amber-200">
+                  <Loader2 size={12} className="animate-spin" />
+                  Generating an answer from your uploaded context...
+                </div>
+              )}
+
+              {!isGeneratingSuggestedAnswer && suggestedAnswerError && (
+                <p className="text-[10px] leading-relaxed text-red-300">{suggestedAnswerError}</p>
+              )}
+
+              {!isGeneratingSuggestedAnswer && !suggestedAnswerError && suggestedAnswer && (
+                <div className="rounded-lg border border-amber-300/20 bg-amber-500/5 p-2.5 text-[10px] leading-relaxed text-gray-200">
+                  {suggestedAnswer}
+                </div>
+              )}
+
+              {!isGeneratingSuggestedAnswer && !suggestedAnswerError && !suggestedAnswer && (
+                <p className="text-[10px] leading-relaxed text-gray-500">
+                  The next coach question will generate a tailored answer from your resume and uploaded project context.
+                </p>
+              )}
+
+              {suggestedAnswerAnchors.length > 0 && (
+                <div className="pt-2 border-t border-white/5">
+                  <div className="mb-2 text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400">Context cues</div>
+                  <ul className="space-y-2">
+                    {suggestedAnswerAnchors.map(anchor => (
+                      <li key={anchor} className="flex gap-2 text-[10px] leading-relaxed text-gray-300">
+                        <Sparkles size={12} className="mt-0.5 shrink-0 text-amber-300" />
+                        <span>{anchor}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
           )}
