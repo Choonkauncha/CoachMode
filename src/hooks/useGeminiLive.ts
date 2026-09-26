@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
-import { getCoachSystemInstruction } from '../lib/coach-prompt';
+import { getCoachSystemInstruction, getContextReadiness, detectsRedundantContextRequest } from '../lib/coach-prompt';
 
 export interface TranscriptMessage {
   id: string;
@@ -97,6 +97,14 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext, voice
   const isIntentionallyDisconnectedRef = useRef<boolean>(true);
   const reconnectTimerRef = useRef<any>(null);
   const isPausedRef = useRef<boolean>(false);
+
+  // Deterministic context guardrail refs — see sendContextCorrection below.
+  // coachTurnBufferRef accumulates the plain text of the CURRENT coach turn only
+  // (reset on turnComplete/interruption) so it can be checked against known
+  // "asked for context we already have" patterns the instant the turn ends.
+  const coachTurnBufferRef = useRef<string>('');
+  const hasNudgedJobRef = useRef<boolean>(false);
+  const hasNudgedResumeRef = useRef<boolean>(false);
 
   // Clean up all audio playbacks
   const stopAudioPlayback = useCallback(() => {
@@ -223,6 +231,26 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext, voice
     };
   }, []);
 
+  // Deterministically corrects the model in-session if it asked for context that
+  // was already supplied. This is triggered by handleServerMessage's own check of
+  // the model's completed turn against detectsRedundantContextRequest — a plain
+  // code check against actual readiness state, not something the model opts into.
+  const sendContextCorrection = useCallback((kind: 'job' | 'resume') => {
+    if (!sessionRef.current) return;
+    const text = kind === 'job'
+      ? '[System: The job description and target role were already provided before this session started. Do not ask the candidate for them again — continue the interview using the job description you already have. Call retrieveInterviewContext if you need a specific detail.]'
+      : "[System: The candidate's resume and background were already provided before this session started. Do not ask for them again — continue using the background you already have. Call retrieveInterviewContext if you need a specific detail.]";
+    console.log('[LiveAPI] Deterministic guardrail: coach asked for already-supplied context, sending correction:', kind);
+    try {
+      sessionRef.current.sendClientContent({
+        turns: [{ role: 'user', parts: [{ text }] }]
+      });
+      setOrbState('thinking');
+    } catch (err) {
+      console.error('[LiveAPI] Failed to send context correction:', err);
+    }
+  }, []);
+
   // Handle incoming server WebSocket messages
   const handleServerMessage = useCallback((e: any) => {
     // 1. Session Resumption Token Update
@@ -306,6 +334,7 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext, voice
       
       // Update transcript with coach model response speech
       if (outputTranscription?.text) {
+        coachTurnBufferRef.current += outputTranscription.text;
         setTranscript(prev => {
           const last = prev[prev.length - 1];
           if (last && last.sender === 'coach' && last.isStreaming) {
@@ -348,6 +377,7 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext, voice
       // Handle barge-in interruption (user started speaking while coach was playing output)
       if (interrupted) {
         console.log('[LiveAPI] Model interrupted by user speech');
+        coachTurnBufferRef.current = '';
         stopAudioPlayback();
         setOrbState('listening');
         setTranscript(prev => {
@@ -368,6 +398,13 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext, voice
       // Turn complete
       if (turnComplete) {
         isModelTurnCompleteRef.current = true;
+
+        // Pull the just-finished coach turn's full text and reset the buffer
+        // before doing anything else, so a slow guardrail check can never
+        // bleed into the next turn's accumulation.
+        const completedCoachText = coachTurnBufferRef.current;
+        coachTurnBufferRef.current = '';
+
         setTranscript(prev => {
           const last = prev[prev.length - 1];
           if (last && last.sender === 'coach' && last.isStreaming) {
@@ -380,7 +417,23 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext, voice
           }
           return prev;
         });
-        
+
+        // Deterministic guardrail: verify — via a plain code check, not the
+        // model's word — that the coach didn't just ask for context that was
+        // already uploaded. If it did, correct it immediately rather than
+        // relying on the system prompt alone.
+        if (completedCoachText) {
+          const readiness = getContextReadiness(jobDetails, candidateInfo, projectContext);
+          const redundantAsk = detectsRedundantContextRequest(completedCoachText, readiness);
+          if (redundantAsk === 'job' && !hasNudgedJobRef.current) {
+            hasNudgedJobRef.current = true;
+            sendContextCorrection('job');
+          } else if (redundantAsk === 'resume' && !hasNudgedResumeRef.current) {
+            hasNudgedResumeRef.current = true;
+            sendContextCorrection('resume');
+          }
+        }
+
         if (scheduledSourcesRef.current.length === 0) {
           setOrbState(prev => (prev === 'speaking' ? 'listening' : prev));
         }
@@ -400,7 +453,7 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext, voice
         isModelTurnCompleteRef.current = false;
       }
     }
-  }, [jobDetails, candidateInfo, projectContext, playPCMChunk, stopAudioPlayback]);
+  }, [jobDetails, candidateInfo, projectContext, playPCMChunk, stopAudioPlayback, sendContextCorrection]);
 
   // Initializes user microphone capture and downsamples PCM to 16kHz
   const startMicPipeline = useCallback(async (session: any) => {
@@ -517,6 +570,9 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext, voice
       reconnectAttemptsRef.current = 0;
       isIntentionallyDisconnectedRef.current = false;
       isPausedRef.current = false;
+      coachTurnBufferRef.current = '';
+      hasNudgedJobRef.current = false;
+      hasNudgedResumeRef.current = false;
     }
 
     try {
@@ -658,15 +714,34 @@ export function useGeminiLive({ jobDetails, candidateInfo, projectContext, voice
       setOrbState(isPausedRef.current ? 'paused' : 'listening');
       startMicPipeline(session);
 
-      // On fresh connect (not reconnect), send an initial prompt so the coach speaks first
+      // On fresh connect (not reconnect), send an initial prompt so the coach speaks first.
+      // What this message says is driven entirely by the same deterministic readiness
+      // check the system prompt uses (getContextReadiness) — computed per-field, not as
+      // a single "is anything uploaded" flag, so a partially-uploaded session (e.g. resume
+      // only, no job description) correctly asks for just the missing piece instead of
+      // either asking for everything or silently skipping intake altogether.
       if (!isReconnect) {
-        const hasInterviewContext = Boolean(jobDetails?.trim() || candidateInfo?.trim() || projectContext?.trim());
+        const readiness = getContextReadiness(jobDetails, candidateInfo, projectContext);
+        const missing: string[] = [];
+        if (!readiness.hasJobDetails) missing.push('the target role or job description — a spoken summary or just the role title is fine');
+        if (!readiness.hasCandidateInfo) missing.push('a brief overview of your background, experience, and relevant skills');
+
+        let kickoffText: string;
+        if (missing.length === 0) {
+          kickoffText = "Hi, I'm ready to start the mock interview coaching session. My job description and background are already loaded, so please introduce yourself and begin the interview directly — there's no need to ask me for either of those.";
+        } else {
+          const alreadyHave: string[] = [];
+          if (readiness.hasJobDetails) alreadyHave.push('my job description');
+          if (readiness.hasCandidateInfo) alreadyHave.push('my background/resume');
+          kickoffText = `Hi, I'm ready to start. Before we begin, please ask me for ${missing.join(' and ')}.`
+            + (alreadyHave.length ? ` You already have ${alreadyHave.join(' and ')}, so don't ask me about ${alreadyHave.length > 1 ? 'those' : 'that'}.` : '')
+            + ' This is setup context; begin interview questions only after gathering it.';
+        }
+
         session.sendClientContent({
           turns: [{
             role: 'user',
-            parts: [{ text: hasInterviewContext
-              ? 'Hi, I\'m ready to start the mock interview coaching session. Please introduce yourself and begin.'
-              : 'Before we start the mock interview, please ask me what role I am preparing for and let me share or summarize the job description if I have it. Also ask me to briefly describe my background, experience, and relevant skills. This is setup context; begin interview questions after gathering it.' }]
+            parts: [{ text: kickoffText }]
           }],
           turnComplete: true
         });
